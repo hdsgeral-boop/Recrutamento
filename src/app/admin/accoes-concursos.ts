@@ -163,7 +163,9 @@ export async function listarConcursosParaAdmin(): Promise<ConcursoComContagens[]
         candidaturasAbertas: c.candidaturas_abertas ?? true,
         mensagemEncerrado: c.mensagem_encerrado,
         rubricaVersao: c.rubrica_versao,
+        rubricaConfig: c.rubrica_config ?? null,
         roteiroId: c.roteiro_id,
+        roteiroConfig: c.roteiro_config ?? null,
         janelaAbertura: c.janela_abertura,
         janelaFecho: c.janela_fecho,
         duracaoEntrevistaMin: c.duracao_entrevista_min,
@@ -225,10 +227,9 @@ export async function criarNovoConcurso(input: NovoConcursoInput): Promise<Respo
   if (org) {
     organizacaoId = org.id;
   } else {
-    // Se a tabela ainda não tiver linha, criar organização padrão
     const { data: novaOrg } = await supabase
       .from("organizacoes")
-      .insert({ nome: "Consulvolt", cor_principal: "#dc2626" })
+      .insert({ nome: "Consulvolt Engenharia e Serviços", cor_principal: "#CE1B2E" })
       .select("id")
       .single();
     organizacaoId = novaOrg?.id || null;
@@ -238,23 +239,44 @@ export async function criarNovoConcurso(input: NovoConcursoInput): Promise<Respo
     return { ok: false, mensagem: "Não foi possível associar a organização ao concurso." };
   }
 
-  const { error: erroInsert } = await supabase.from("concursos").insert({
-    organizacao_id: organizacaoId,
-    slug: d.slug,
-    nome: d.nome,
-    vaga_titulo: d.vagaTitulo,
-    vaga_descricao: d.vagaDescricao,
-    vagas_previstas: d.vagasPrevistas,
-    prazo_candidaturas: d.prazoCandidaturas,
-    rubrica_versao: d.rubricaVersao,
-    modalidade_padrao: d.modalidadePadrao,
-    estado: "aberto",
-    candidaturas_abertas: true,
-  });
+  const versaoRoteiro = `roteiro-${d.slug}`;
 
-  if (erroInsert) {
+  const { data: concCriado, error: erroInsert } = await supabase
+    .from("concursos")
+    .insert({
+      organizacao_id: organizacaoId,
+      slug: d.slug,
+      nome: d.nome,
+      vaga_titulo: d.vagaTitulo,
+      vaga_descricao: d.vagaDescricao,
+      vagas_previstas: d.vagasPrevistas,
+      prazo_candidaturas: d.prazoCandidaturas,
+      rubrica_versao: d.rubricaVersao || "padrao-v1",
+      rubrica_config: d.rubricaConfig || null,
+      roteiro_id: versaoRoteiro,
+      roteiro_config: d.roteiroConfig || null,
+      modalidade_padrao: d.modalidadePadrao || "videochamada",
+      estado: "aberto",
+      candidaturas_abertas: true,
+    })
+    .select("id")
+    .single();
+
+  if (erroInsert || !concCriado) {
     console.error("[concursos] erro ao criar concurso:", erroInsert);
-    return { ok: false, mensagem: `Erro ao gravar concurso: ${erroInsert.message}` };
+    return { ok: false, mensagem: `Erro ao gravar concurso: ${erroInsert?.message}` };
+  }
+
+  // Se foram configuradas perguntas de entrevista personalizadas, guardar na tabela roteiros_entrevista
+  const perguntasRoteiro = (d.roteiroConfig as { perguntas?: unknown[] } | undefined)?.perguntas;
+  if (Array.isArray(perguntasRoteiro) && perguntasRoteiro.length > 0) {
+    await supabase.from("roteiros_entrevista").upsert({
+      versao: versaoRoteiro,
+      concurso_id: concCriado.id,
+      perguntas: perguntasRoteiro,
+      activo: true,
+      notas: `Roteiro específico configurado na Etapa 2 do concurso "${d.nome}"`,
+    });
   }
 
   // Activar automaticamente o novo concurso na sessão do administrador
@@ -264,4 +286,65 @@ export async function criarNovoConcurso(input: NovoConcursoInput): Promise<Respo
   revalidatePath("/admin/concursos");
 
   return { ok: true, slug: d.slug };
+}
+
+/**
+ * Guarda ou actualiza a rúbrica e o roteiro de entrevista de um concurso existente.
+ */
+export async function guardarRubricaERoteiroConcurso({
+  concursoId,
+  rubricaConfig,
+  roteiroConfig,
+  modalidadePadrao,
+}: {
+  concursoId: string;
+  rubricaConfig: unknown;
+  roteiroConfig: unknown;
+  modalidadePadrao?: "chamada" | "videochamada" | "presencial";
+}): Promise<{ ok: boolean; mensagem?: string }> {
+  try {
+    const sessao = await sessaoActual();
+    if (!sessao || !pode(sessao.papel, "configurar")) {
+      return { ok: false, mensagem: "Sem permissão para alterar configurações do concurso." };
+    }
+
+    const supabase = criarClienteServidor();
+
+    const dadosUpdate: Record<string, unknown> = {
+      rubrica_config: rubricaConfig,
+      roteiro_config: roteiroConfig,
+    };
+    if (modalidadePadrao) {
+      dadosUpdate.modalidade_padrao = modalidadePadrao;
+    }
+
+    const { data: conc, error: erroUpdate } = await supabase
+      .from("concursos")
+      .update(dadosUpdate)
+      .eq("id", concursoId)
+      .select("slug, nome")
+      .single();
+
+    if (erroUpdate) {
+      return { ok: false, mensagem: erroUpdate.message };
+    }
+
+    // Se houver perguntas de entrevista, sincronizar também com roteiros_entrevista
+    const perguntasRoteiro = (roteiroConfig as { perguntas?: unknown[] } | undefined)?.perguntas;
+    if (conc && Array.isArray(perguntasRoteiro) && perguntasRoteiro.length > 0) {
+      const versaoRoteiro = `roteiro-${conc.slug}`;
+      await supabase.from("roteiros_entrevista").upsert({
+        versao: versaoRoteiro,
+        concurso_id: concursoId,
+        perguntas: perguntasRoteiro,
+        activo: true,
+        notas: `Roteiro actualizado para o concurso "${conc.nome}"`,
+      });
+    }
+
+    revalidatePath("/admin", "layout");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, mensagem: err instanceof Error ? err.message : "Erro desconhecido." };
+  }
 }

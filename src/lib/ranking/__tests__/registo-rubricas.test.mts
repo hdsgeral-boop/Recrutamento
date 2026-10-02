@@ -6,8 +6,8 @@ import {
   listarRubricas,
   REGISTO_RUBRICAS,
   type RubricaAvaliacao,
-} from "@/lib/ranking/registo-rubricas";
-import type { DadosFormulario, Extraccao } from "@/lib/ranking/tipos";
+} from "../registo-rubricas.ts";
+import type { DadosFormulario, Extraccao } from "../tipos.ts";
 
 const FORMULARIO_BASE: DadosFormulario = {
   provincia: "Bengo",
@@ -56,7 +56,7 @@ test("listarRubricas: devolve lista formatada das rubricas registadas", () => {
 });
 
 test("rubricas registadas produzem pontuação válida com extraccaoVazia", () => {
-  for (const [versao, rubrica] of Object.entries(REGISTO_RUBRICAS)) {
+  for (const [versao, rubrica] of Object.entries(REGISTO_RUBRICAS) as [string, RubricaAvaliacao][]) {
     const vazia = rubrica.extraccaoVazia();
     const resultado = rubrica.calcularPontuacao(FORMULARIO_BASE, vazia);
     assert.equal(resultado.versao, versao);

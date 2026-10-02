@@ -64,6 +64,48 @@ export function obterRubrica(versao?: string | null): RubricaAvaliacao {
   return REGISTO_RUBRICAS[versao];
 }
 
+export interface CriterioRubricaConfig {
+  chave: string;
+  titulo: string;
+  peso: number;
+  descricao?: string;
+}
+
+export interface RubricaConfigPersonalizada {
+  nome?: string;
+  totalMaximo?: number;
+  criterios: CriterioRubricaConfig[];
+}
+
+export function registarRubricaPersonalizada(versao: string, config: RubricaConfigPersonalizada): RubricaAvaliacao {
+  const pesos: Record<string, number> = {};
+  for (const c of config.criterios) {
+    pesos[c.chave] = c.peso;
+  }
+  const totalMaximo = config.totalMaximo || 100;
+
+  const nova: RubricaAvaliacao = {
+    versao,
+    nome: config.nome || `Rúbrica ${versao}`,
+    descricao: "Rúbrica configurada à medida para o concurso.",
+    totalMaximo,
+    pesos,
+    municipiosProjecto: [],
+    calcularPontuacao: (formulario, extraccao) => {
+      const base = calcularPadraoV1(formulario, extraccao);
+      return {
+        ...base,
+        versao,
+        total: Math.min(totalMaximo, base.total),
+      };
+    },
+    extraccaoVazia: extraccaoVaziaPadraoV1,
+  };
+
+  REGISTO_RUBRICAS[versao] = nova;
+  return nova;
+}
+
 export function listarRubricas(): { versao: string; nome: string; totalMaximo: number }[] {
   return Object.values(REGISTO_RUBRICAS).map((r) => ({
     versao: r.versao,

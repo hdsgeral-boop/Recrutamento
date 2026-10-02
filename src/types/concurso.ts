@@ -54,10 +54,12 @@ export interface Concurso {
   pastaDriveId: string | null;
   pastaDriveNome: string | null;
 
-  // Estruturas analíticas JSON
+  // Estruturas analíticas JSON e configurações dinâmicas
   funil?: unknown;
   estados?: unknown;
   graficos?: unknown;
+  rubricaConfig?: unknown;
+  roteiroConfig?: unknown;
 
   criadoEm: string;
 }

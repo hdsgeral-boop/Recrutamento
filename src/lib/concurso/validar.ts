@@ -9,6 +9,8 @@ export interface NovoConcursoInput {
   prazoCandidaturas: string;
   rubricaVersao?: string;
   modalidadePadrao?: "chamada" | "videochamada" | "presencial";
+  rubricaConfig?: unknown;
+  roteiroConfig?: unknown;
 }
 
 export interface ValidacaoConcursoResultado {
@@ -23,6 +25,8 @@ export interface ValidacaoConcursoResultado {
     prazoCandidaturas: string;
     rubricaVersao: string;
     modalidadePadrao: "chamada" | "videochamada" | "presencial";
+    rubricaConfig?: unknown;
+    roteiroConfig?: unknown;
   };
 }
 
@@ -67,6 +71,8 @@ export function validarDadosConcurso(input: NovoConcursoInput): ValidacaoConcurs
       prazoCandidaturas: input.prazoCandidaturas || new Date(Date.now() + 86400000 * 30).toISOString(),
       rubricaVersao: input.rubricaVersao || "padrao-v1",
       modalidadePadrao: input.modalidadePadrao || "chamada",
+      rubricaConfig: input.rubricaConfig,
+      roteiroConfig: input.roteiroConfig,
     },
   };
 }
